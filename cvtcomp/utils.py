@@ -1,7 +1,11 @@
 from typing import Tuple, NoReturn
+import os
 
 import numpy as np
 import cv2
+import tqdm
+
+from cvtcomp.base import *
 
 
 def load_video_to_numpy(filepath: str) -> Tuple[np.ndarray, int, int, Tuple[int, int]]:
@@ -65,9 +69,43 @@ def load_compressed_video(filepath: str) -> NoReturn:
     raise NotImplementedError("TBD")
 
 
-def compute_psnr_dataset(folderpath: str, encoder, decoder) -> float:
-    pass
+def compute_metrics_dataset(folderpath: str, encoder: Encoder, decoder: Decoder, metric="psnr") -> float:
+
+    if metric == "psnr":
+        compute_metric = cv2.PSNR
+    elif metric == "ssim":
+        raise NotImplementedError
+    else:
+        raise ValueError(f"Wrong metric is specified: {metric}. Please , use 'psnr' or 'ssim'")
+
+    assert encoder.encoder_type == decoder.decoder_type, "encoder and decoder should use the same compressed format"
+
+    fnames = [fname for fname in os.listdir(folderpath) if fname[-4:] == ".y4m"]
+
+    res_metrics = np.zeros(len(fnames))
+    res_cr = np.zeros(len(fnames))
+
+    for ii in tqdm.tqdm(range(len(fnames))):
+
+        total_size, compressed_size = 0, 0
+
+        data, _, _, _ = load_video_to_numpy(os.path.join(folderpath, fnames[ii]))
+
+        total_size += data.nbytes
+        compressed_data = encoder.encode(data)
+        restored_data = decoder.decode(compressed_data)
+
+        if encoder.encoder_type == 'tucker':
+            compressed_size += compressed_data[0].nbytes
+            compressed_size += sum([x.nbytes for x in compressed_data[1]])
+        elif encoder.encoder_type == "tt":
+            compressed_size += sum([x.nbytes for x in compressed_data])
+
+        res_metrics[ii] = compute_metric(data, restored_data)
+        res_cr[ii] = float(compressed_size) / float(total_size)
+
+    return np.mean(res_metrics), np.mean(res_cr)
 
 
-def compute_ssim_dataset(folderpath: str, encoder, decoder) -> float:
+if __name__ == "__main__":
     pass
