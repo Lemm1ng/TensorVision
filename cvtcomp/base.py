@@ -8,7 +8,7 @@ import cv2
 def tucker_encode(data: np.ndarray, quality=1.0):
 
     ranks = (
-        int(data.shape[0] * quality),
+        max(1, int(data.shape[0] * quality)),
         int(data.shape[1] * quality),
         int(data.shape[2] * quality),
         3
@@ -16,7 +16,9 @@ def tucker_encode(data: np.ndarray, quality=1.0):
 
     compressed_data = tucker(
         tl.tensor(data.astype(np.float32)),
-        rank=ranks
+        rank=ranks,
+        tol=1e-7,
+        n_iter_max=300
     )
 
     return compressed_data
@@ -72,7 +74,7 @@ class Encoder:
                 else:
                     raise ValueError(f"Wrong encoder type: {self.encoder_type}")
             elif key == "quality":
-                assert value <= 1.0, "quality <= 1"
+                assert value <= 1.0 and value >= 0, "0 <= quality <= 1"
                 self.quality = value
             else:
                 raise ValueError(f"Wrong argument is provided : {value}")
@@ -107,9 +109,7 @@ class Decoder:
 
     def decode(self, compressed_data: list):
 
-        decompressed_data = self.decoder(compressed_data).astype(np.uint8)
-        decompressed_data[decompressed_data < 0] = 0
-        decompressed_data[decompressed_data > 255] = 255
+        decompressed_data = np.clip(self.decoder(compressed_data), 0.0, 255.0).astype(np.uint8)
 
         return decompressed_data
 
