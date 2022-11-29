@@ -3,3 +3,4 @@ numpy
 matplotlib
 notebook
 tensorly
+pytorch-msssim
