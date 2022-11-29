@@ -1,9 +1,11 @@
+import pickle
 from typing import Tuple, NoReturn
 import os
 
 import numpy as np
 import cv2
 import tqdm
+from skimage.metrics import structural_similarity
 
 from cvtcomp.base import *
 
@@ -59,22 +61,29 @@ def save_video_from_numpy(filepath: str, video: np.array, fourcc: int, fps: int,
     video_writer.release()
 
 
-def save_compressed_video(filepath: str, video: np.ndarray, metadata: dict) -> NoReturn:
+def save_compressed_video(filepath: str, compressed_video) -> NoReturn:
+    file = open(filepath, 'wb')
+    pickle.dump(compressed_video, file)
+    file.close()
 
-    raise NotImplementedError("TBD")
+
+def load_compressed_video(filepath: str):
+    file = open(filepath, 'rb')
+    compressed_video = pickle.load(file)
+    file.close()
+    return compressed_video
 
 
-def load_compressed_video(filepath: str) -> NoReturn:
-
-    raise NotImplementedError("TBD")
+def compute_ssim(video1, video2):
+    ssim_val = structural_similarity(video1, video2, channel_axis=3)
+    return ssim_val
 
 
 def compute_metrics_dataset(folderpath: str, encoder: Encoder, decoder: Decoder, metric="psnr") -> float:
-
     if metric == "psnr":
         compute_metric = cv2.PSNR
     elif metric == "ssim":
-        raise NotImplementedError
+        compute_metric = compute_ssim
     else:
         raise ValueError(f"Wrong metric is specified: {metric}. Please , use 'psnr' or 'ssim'")
 
