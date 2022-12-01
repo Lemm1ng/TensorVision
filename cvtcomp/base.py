@@ -4,7 +4,7 @@ import numpy as np
 import tensorly as tl
 from tensorly.decomposition import tucker, matrix_product_state
 from tensorly import tt_to_tensor, tucker_to_tensor
-import cv2
+#import cv2
 
 
 def tucker_encode(data: np.ndarray, quality=1.0):
@@ -19,7 +19,7 @@ def tucker_encode(data: np.ndarray, quality=1.0):
         tl.tensor(data.astype(np.float32)),
         rank=ranks,
         tol=1e-7,
-        n_iter_max=300
+        n_iter_max=1
     )
 
     return compressed_data
@@ -152,7 +152,7 @@ class TensorVideo:
             self.chunk_size = data.shape[0]
         self.shape = data.shape
         for frame_no in range(0, data.shape[0], self.chunk_size):
-            chunk = data[frame_no:frame_no + self.chunk_size, :, :, :].astype(np.float64)
+            chunk = data[frame_no:frame_no + self.chunk_size, :, :, :].astype(np.float32)
             coded_chunk = self.encoder.encode(chunk)
             res.append(coded_chunk)
         return res

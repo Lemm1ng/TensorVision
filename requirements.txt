@@ -1,6 +1,8 @@
+pip
 opencv-python
 numpy
 matplotlib
 notebook
 tensorly
-pytorch-msssim
+scikit-image
+tqdm

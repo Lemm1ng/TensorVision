@@ -62,25 +62,29 @@ def save_video_from_numpy(filepath: str, video: np.array, fourcc: int, fps: int,
     video_writer.release()
 
 
-def save_compressed_video(filepath: str, compressed_video) -> NoReturn:
-    file = open(filepath, 'wb')
-    pickle.dump(compressed_video, file)
-    file.close()
+def save_compressed_video(filepath: str, compressed_video: list) -> NoReturn:
+
+    with open(filepath, 'wb') as file:
+        pickle.dump(compressed_video, file)
 
 
 def load_compressed_video(filepath: str):
-    file = open(filepath, 'rb')
-    compressed_video = pickle.load(file)
-    file.close()
+
+    with open(filepath, 'rb') as file:
+        compressed_video = pickle.load(file)
+
     return compressed_video
 
 
 def compute_ssim(video1, video2):
+
     ssim_val = structural_similarity(video1, video2, channel_axis=3)
+
     return ssim_val
 
 
 def encdec_video_chunkwise(video, encoder, decoder, chunk_size=10):
+
     decompressed_video = np.zeros(video.shape, dtype=np.uint8)
 
     for ii in range(0, video.shape[0], chunk_size):
@@ -139,7 +143,7 @@ def plot_ssim_ms_ssim(filepath: str, encoder_type='tucker', qualities=(0.10, 0.2
             chunk_size=50
         ).to_numpy()
 
-        ssim_val = structural_similarity(video, decompressed_video, multichannel=True)
+        ssim_val = structural_similarity(video, decompressed_video, channel_axis=3)
         result_ssim.append(ssim_val)
 
     result_ssim = np.array(result_ssim)
