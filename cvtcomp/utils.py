@@ -46,9 +46,10 @@ def load_video_to_numpy(filepath: str) -> Tuple[np.ndarray, int, int, Tuple[int,
 
 def save_video_from_numpy(filepath: str, video: np.array, fourcc: int, fps: int, size, color=True) -> NoReturn:
     """
-    Output
+    Input
+    :param: filepath <str> - file to save video
     :param: video <np.ndarray> - [F, W, H, C] uint8 RGB format
-    :param: fourcc <int> - encoded codec type (!!!HARD TO FIND its specification) The website is owned by casino :)
+    :param: fourcc <int> - encoded codec type (!!!HARD TO FIND its specification) The website is owned by casino now :)
     :param: fps <float> - fps...
     :param: size <(int, int)> - Width, Height
     :param: color <bool> - True if colored video should be saved
@@ -94,66 +95,40 @@ def encdec_video_chunkwise(video, encoder, decoder, chunk_size=10):
     return decompressed_video
 
 
-def compute_metrics_dataset(folderpath: str, encoder: Encoder, decoder: Decoder, metric="psnr") -> float:
-    if metric == "psnr":
-        compute_metric = cv2.PSNR
-    elif metric == "ssim":
-        compute_metric = compute_ssim
-    else:
-        raise ValueError(f"Wrong metric is specified: {metric}. Please , use 'psnr' or 'ssim'")
+def compute_metrics_dataset(folderpath: str, compression_type="tucker", chunk_size=30, quality=0.2) -> float:
 
-    assert encoder.encoder_type == decoder.decoder_type, "encoder and decoder should use the same compressed format"
+    assert compression_type in ('tucker', 'tt'), "Compression type should be either 'tucker' or 'tt'"
 
     fnames = [fname for fname in os.listdir(folderpath) if fname[-4:] == ".y4m"]
 
-    res_metrics = np.zeros(len(fnames))
-    res_cr = np.zeros(len(fnames))
+    res_metrics_psnr = np.zeros(len(fnames))
+    res_metrics_ssim = np.zeros(len(fnames))
+    res_cr = None
+
+    tensor_video = TensorVideo(
+        compression_type=compression_type,
+        quality=quality,
+        chunk_size=chunk_size,
+        decoded_data_type=np.uint8
+    )
+
+    total_size, compressed_size = 0, 0 # We calculate CR over the complete dataset
 
     for ii in tqdm.tqdm(range(len(fnames))):
-
-        total_size, compressed_size = 0, 0
-
         data, _, _, _ = load_video_to_numpy(os.path.join(folderpath, fnames[ii]))
 
-        total_size += data.nbytes
-        compressed_data = encoder.encode(data)
-        restored_data = decoder.decode(compressed_data)
+        tensor_video.encode(data)
+        restored_data = tensor_video.decode()
 
-        if encoder.encoder_type == 'tucker':
-            compressed_size += compressed_data[0].nbytes
-            compressed_size += sum([x.nbytes for x in compressed_data[1]])
-        elif encoder.encoder_type == "tt":
-            compressed_size += sum([x.nbytes for x in compressed_data])
+        compressed_size = tensor_video.encoded_data_size
+        total_size += os.path.getsize(os.path.join(folderpath, fnames[ii]))
 
-        res_metrics[ii] = compute_metric(data, restored_data)
-        res_cr[ii] = float(compressed_size) / float(total_size)
+        res_metrics_psnr[ii] = cv2.PSNR(data, restored_data)
+        res_metrics_ssim[ii] = compute_ssim(data, restored_data)
 
-    return np.mean(res_metrics), np.mean(res_cr)
+    res_cr = float(compressed_size) / float(total_size)
 
-
-def plot_ssim_ms_ssim(filepath: str, encoder_type='tucker', qualities=(0.10, 0.25, 0.50)):
-    result_ssim = []
-    video, *_ = load_video_to_numpy(filepath)
-
-    for quality in qualities:
-        decompressed_video = TensorVideo(
-            data=video,
-            encoder_type=encoder_type,
-            quality=quality,
-            chunk_size=50
-        ).to_numpy()
-
-        ssim_val = structural_similarity(video, decompressed_video, channel_axis=3)
-        result_ssim.append(ssim_val)
-
-    result_ssim = np.array(result_ssim)
-    x = np.array(qualities)
-
-    plt.figure(figsize=(8, 6))
-    plt.grid(True)
-    plt.xlabel("Core size")
-    plt.ylabel("ms_ssim, ssim")
-    plt.plot(x, result_ssim)
+    return res_cr, np.mean(res_metrics_psnr), np.mean(res_metrics_ssim)
 
 
 def convert_from_y4m_to_avi(filename, encoder_type='tucker', quality=1.0, chunk_size=50):
@@ -169,19 +144,18 @@ def convert_from_y4m_to_avi(filename, encoder_type='tucker', quality=1.0, chunk_
 
 def delete_reference_frame(video):
     new_video = video.astype(np.int16) - video[0].astype(np.int16)
-    return new_video[1:], video[0]
+    return new_video, video[0]
 
 
 def restore_from_reference_frame(video_without_ref_frame, ref_frame):
     video = video_without_ref_frame + ref_frame
-    video = np.vstack([ref_frame.reshape((1, ref_frame.shape[0], ref_frame.shape[1], ref_frame.shape[2])), video])
     video[video > 255.0] = 255.0
     video[video < 0.0] = 0.0
     video = video.astype(np.uint8)
     return video
 
 
-def bin_search_video_metric(video, target_metric_value, num_iter=5, metric='psnr', encoder_type='tt'):
+def bin_search_video_metric(video, target_metric_value, num_iter=5, metric='psnr', compression_type='tt'):
     if metric == "psnr":
         compute_metric = cv2.PSNR
     elif metric == "ssim":
@@ -194,7 +168,12 @@ def bin_search_video_metric(video, target_metric_value, num_iter=5, metric='psnr
     value, metric_value, compressed_video = 0, 0, None
     for _ in range(num_iter):
         value = (max_value + min_value) / 2
-        compressed_video = TensorVideo(video, encoder_type=encoder_type, quality=value, chunk_size=50).to_numpy()
+        compressed_video = TensorVideo(
+            compression_type=compression_type,
+            quality=value,
+            chunk_size=50
+        ).encode(video, show_results=True)
+
         metric_value = compute_metric(video, compressed_video)
         print(value, metric_value)
         if metric_value > target_metric_value:
@@ -212,7 +191,8 @@ def play_video(video: np.array, fps: int = 30):
     :param: video - np.array [frames, height, width, channels] - RGB uint8
     :param: fps - fps :)
     """
-    fig = plt.figure(figsize=(12,6))
+
+    fig = plt.figure(figsize=(6,4))
     im = plt.imshow(video[0,:,:,:])
     plt.close() # this is required to not display the generated image
 

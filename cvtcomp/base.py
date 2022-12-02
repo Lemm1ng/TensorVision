@@ -112,54 +112,49 @@ class Decoder:
         return decompressed_data
 
 
-class StreamerEncoded:
-    """Class for streaming the compressed data in to frame-wise manner"""
-
-    def __init__(self, compressed_data, video_len, encoder_type="tucker"):
-        self.compressed_data = compressed_data
-        self.encoder_type = encoder_type
-        self.n_frame = 0
-        self.video_len = video_len
-
-    def __next__(self):
-        while self.n_frame < self.video_len:
-            if self.encoder_type == 'tucker':
-                raise NotImplementedError("TBD")
-            elif self.encoder_type == 'tt':
-                raise NotImplementedError("TBD")
-            self.n_frame += 1
-            yield None
-
-    def __iter__(self):
-        return self
-
-
 class TensorVideo:
-    def __init__(self, data=None, encoder_type='tt', quality=0.5, chunk_size=None, data_type=np.uint8):
-        self.encoder_type = encoder_type
-        self.quality = quality
-        self.encoder = Encoder(encoder_type=self.encoder_type, quality=self.quality)
-        self.decoder = Decoder(decoder_type=self.encoder_type)
-        self.chunk_size = chunk_size
-        self.shape = None
-        self.data_type = data_type
-        self.data = self.from_numpy(data) if data is not None else None
+    def __init__(self, compression_type='tt', quality=0.5, chunk_size=None, decoded_data_type=np.uint8):
 
-    def from_numpy(self, data: np.ndarray):
+        self.compression_type = compression_type
+        self.quality = quality
+        self.encoder = Encoder(encoder_type=self.compression_type, quality=self.quality)
+        self.decoder = Decoder(decoder_type=self.compression_type)
+        self.chunk_size = chunk_size
+        self.decoded_data_type = decoded_data_type
+
+        self.encoded_data = None
+        self.shape = None
+        self.encoded_data_size = None
+        self.fps = None
+
+    def encode(self, data: np.ndarray, show_results=False):
+
+        self.encoded_data_size = 0
         res = []
-        self.data_type = data.dtype
+
         if self.chunk_size is None:
             self.chunk_size = data.shape[0]
         self.shape = data.shape
         for frame_no in range(0, data.shape[0], self.chunk_size):
-            chunk = data[frame_no:frame_no + self.chunk_size, :, :, :].astype(np.float32)
-            coded_chunk = self.encoder.encode(chunk)
-            res.append(coded_chunk)
-        return res
 
-    def to_numpy(self):
+            compressed_data_chunk = self.encoder.encode(data[frame_no:frame_no + self.chunk_size, :, :, :].astype(np.float32))
+
+            if self.compression_type == 'tt':
+                self.encoded_data_size += sum([x.nbytes for x in compressed_data_chunk])
+            elif self.compression_type == 'tucker':
+                self.encoded_data_size += compressed_data_chunk[0].nbytes
+                self.encoded_data_size += sum([x.nbytes for x in compressed_data_chunk[1]])
+
+            res.append(compressed_data_chunk)
+
+        self.encoded_data = res
+
+        if show_results:
+            return self.encoded_data
+
+    def decode(self):
         res = []
-        for coded_chunk in self.data:
+        for coded_chunk in self.encoded_data:
             x = self.decoder.decode(coded_chunk)
             res.append(x)
 
@@ -167,10 +162,11 @@ class TensorVideo:
 
         res[res > 255.0] = 255.0
         res[res < 0.0] = 0.0
-        res = res.astype(self.data_type)
+        res = res.astype(self.decoded_data_type)
         return res
 
-    def save(self, filename):
+    def save(self, filename, fps=30):
+        self.fps=fps
         with open(filename, 'wb') as file:
             pickle.dump(self.__dict__, file)
 
@@ -178,4 +174,27 @@ class TensorVideo:
         with open(filename, 'rb') as file:
             self.__dict__ = pickle.load(file)
         return self
+
+
+    # NOT IMPLEMENTED YET
+    class StreamerEncoded:
+        """Class for streaming the compressed data in to frame-wise manner"""
+
+        def __init__(self, compressed_data, video_len, encoder_type="tucker"):
+            self.compressed_data = compressed_data
+            self.encoder_type = encoder_type
+            self.n_frame = 0
+            self.video_len = video_len
+
+        def __next__(self):
+            while self.n_frame < self.video_len:
+                if self.encoder_type == 'tucker':
+                    raise NotImplementedError("TBD")
+                elif self.encoder_type == 'tt':
+                    raise NotImplementedError("TBD")
+                self.n_frame += 1
+                yield None
+
+        def __iter__(self):
+            return self
 
