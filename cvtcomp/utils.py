@@ -112,7 +112,7 @@ def compute_metrics_dataset(folderpath: str, compression_type="tucker", chunk_si
         decoded_data_type=np.uint8
     )
 
-    total_size, compressed_size = 0, 0 # We calculate CR over the complete dataset
+    total_size, compressed_size = 0.0, 0.0 # We calculate CR over the complete dataset
 
     for ii in tqdm.tqdm(range(len(fnames))):
         data, _, _, _ = load_video_to_numpy(os.path.join(folderpath, fnames[ii]))
@@ -120,7 +120,7 @@ def compute_metrics_dataset(folderpath: str, compression_type="tucker", chunk_si
         tensor_video.encode(data)
         restored_data = tensor_video.decode()
 
-        compressed_size = tensor_video.encoded_data_size
+        compressed_size += tensor_video.encoded_data_size
         total_size += os.path.getsize(os.path.join(folderpath, fnames[ii]))
 
         res_metrics_psnr[ii] = cv2.PSNR(data, restored_data)
