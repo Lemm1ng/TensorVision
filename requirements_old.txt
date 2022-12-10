@@ -1,0 +1,8 @@
+pip
+opencv-python
+numpy
+matplotlib
+notebook
+tensorly
+scikit-image
+tqdm
