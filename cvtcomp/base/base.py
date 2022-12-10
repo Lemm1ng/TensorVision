@@ -1,53 +1,7 @@
 import pickle
 
 import numpy as np
-import tensorly as tl
-from tensorly.decomposition import tucker, matrix_product_state
-from tensorly import tt_to_tensor, tucker_to_tensor
-#import cv2
-
-
-def tucker_encode(data: np.ndarray, quality=1.0):
-    ranks = (
-        max(1, int(data.shape[0] * quality)),
-        int(data.shape[1] * quality),
-        int(data.shape[2] * quality),
-        3
-    )
-
-    compressed_data = tucker(
-        tl.tensor(data.astype(np.float32)),
-        rank=ranks,
-        tol=1e-7,
-        n_iter_max=1
-    )
-
-    return compressed_data
-
-
-def tt_encode(data: np.ndarray, quality=1.0):
-    ranks = (
-        1,
-        int(data.shape[0] * quality),
-        int(data.shape[1] * quality),
-        int(data.shape[2] * quality),
-        1,
-    )
-
-    compressed_data = matrix_product_state(
-        tl.tensor(data.astype(np.float32)),
-        rank=ranks
-    )
-
-    return compressed_data
-
-
-def tt_decode(compressed_data: list) -> np.ndarray:
-    return tt_to_tensor(compressed_data)
-
-
-def tucker_decode(compressed_data: list) -> np.ndarray:
-    return tucker_to_tensor(compressed_data)
+from cvtcomp.base.decompositions import ttsvd_encode, tt_decode, tuckersvd_encode, tucker_decode
 
 
 class Encoder:
@@ -55,24 +9,24 @@ class Encoder:
 
     def __init__(self, **kwargs):
         """
-        :param: quality in [0, 1] - rank ratio from the initial dimension along the t, w, h
+        :param: quality PSNR < 45 db
         :param: encoder_type - type of the used tensor decomposition: 'tucker' or 'tt'""
         """
-        self.quality = 1.0
+        self.quality = 25.0
         self.encoder_type = "tucker"
-        self.encoder = tucker_encode
+        self.encoder = tuckersvd_encode
 
         for key, value in kwargs.items():
             if key == "encoder_type":
                 self.encoder_type = value
                 if self.encoder_type == "tucker":
-                    self.encoder = tucker_encode
+                    self.encoder = tuckersvd_encode
                 elif self.encoder_type == "tt":
-                    self.encoder = tt_encode
+                    self.encoder = ttsvd_encode
                 else:
                     raise ValueError(f"Wrong encoder type: {self.encoder_type}")
             elif key == "quality":
-                assert 0 <= value <= 1.0, "0 <= quality <= 1"
+                assert 0 <= value <= 45.0, "0.0 <= PSNR <= 45.0"
                 self.quality = value
             else:
                 raise ValueError(f"Wrong argument is provided : {value}")
@@ -113,7 +67,7 @@ class Decoder:
 
 
 class TensorVideo:
-    def __init__(self, compression_type='tt', quality=0.5, chunk_size=None, decoded_data_type=np.uint8):
+    def __init__(self, compression_type='tt', quality=25.0, chunk_size=None, decoded_data_type=np.uint8):
 
         self.compression_type = compression_type
         self.quality = quality
@@ -197,4 +151,3 @@ class TensorVideo:
 
         def __iter__(self):
             return self
-
