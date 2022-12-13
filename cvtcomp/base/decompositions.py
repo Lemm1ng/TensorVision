@@ -214,7 +214,7 @@ def ttsvd_encode(tensor: np.ndarray[np.uint8], quality: float = 25.0, video_rang
     return G_list
 
 
-def tuckersvd_encode(tensor: np.ndarray[np.uint8], quality: float = 25.0, video_range:float = 255) -> Tuple[np.ndarray[np.float32], List[np.ndarray[np.float32]]]:
+def tuckersvd_encode(tensor: np.ndarray[np.uint8], quality: float = 25.0, video_range:float = 255, heuristics: bool = True) -> Tuple[np.ndarray[np.float32], List[np.ndarray[np.float32]]]:
     """Tucker decomposition with analytical rank computation based on PSNR and its connection with Frobenius norm.
         https://github.com/azamat11235/NLRTA - The basic algorithm implementation is adopted from this source.
 
@@ -223,6 +223,7 @@ def tuckersvd_encode(tensor: np.ndarray[np.uint8], quality: float = 25.0, video_
         :param tensor  <np.ndarray[np.uint8]> - input tensor (e.g. video)
         :param quality  <float> - Target PSNR (db) for tensor compression. Please, avoid using quality > 45 db
         since the numerical errors do not allow reaching it.
+        :param heuristics <bool> - if True enables the heuristics in analytical rank evaluation during the compression.
 
         :param video_range <int> - max signal value in tensor
 
@@ -232,13 +233,39 @@ def tuckersvd_encode(tensor: np.ndarray[np.uint8], quality: float = 25.0, video_
         """
 
     S = tensor.astype(np.float32)
-    # Maximum allowed Frobenius norm for residuals based on target PSNR
-    single_svd_decomp_quality = np.sqrt(tensor.size * video_range ** 2 / np.power(10, quality / 10)) / (len(tensor.shape))
 
+    if heuristics:
+        # Whe do not compress along the small dims (e.g. C)
+        r_min_to_compress = 4
+
+        single_svd_decomp_quality = np.sqrt(
+            ((tensor.size * video_range ** 2)
+             / np.power(10, quality / 10)
+             / sum([x >= r_min_to_compress for x in tensor.shape]))
+            )
+    else:
+        # No heuristics:
+        single_svd_decomp_quality = np.sqrt(
+            ((tensor.size * video_range ** 2)
+             / np.power(10, quality / 10)
+             / len(tensor.shape))
+        )
+
+    # Test
+    # Maximum allowed Frobenius norm for residuals based on target PSNR
+    #single_svd_decomp_quality = np.sqrt(tensor.size * video_range ** 2 / np.power(10, quality / 10)) / (len(tensor.shape) - 1)
     U_list = []
     for k in range(len(tensor.shape)):
         ak = unfold(S, k)
-        u, vh = truncated_svd(ak, quality=single_svd_decomp_quality)
+
+        if heuristics:
+            if tensor.shape[k] < r_min_to_compress:
+                u, vh = truncated_svd(ak, quality=0)
+            else:
+                u, vh = truncated_svd(ak, quality=single_svd_decomp_quality)
+        else:
+            u, vh = truncated_svd(ak, quality=single_svd_decomp_quality)
+
         r = u.shape[1]
         shape = list(S.shape)
         shape[k] = min(vh.shape[1], r)
