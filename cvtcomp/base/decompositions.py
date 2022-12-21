@@ -138,10 +138,10 @@ def truncated_svd(matrix: np.ndarray[np.float32], quality: float) -> Tuple[np.nd
     u, s, vh = np.linalg.svd(matrix, full_matrices=False)
     res_r_frob = 0.0 # squared Frobenius norm of residuals
     r = 1  # Minimal rank for decomposition
-    for ii in range(s.size - 1, 0, -1):
+    for ii in range(s.size - 1, -1, -1):
         res_r_frob += s[ii] ** 2
         if np.sqrt(res_r_frob) >= quality:
-            r = ii
+            r = ii + 1
             break
 
     return u[:, :r], (s[:r] * vh[:r, :].T).T
