@@ -8,7 +8,7 @@ import numpy as np
 def load_video_to_numpy(filepath: str) -> Tuple[np.ndarray, int, int, Tuple[int, int]]:
     """
     Input
-    :param: filepath <str> - Filepath to the video to load
+    :param filepath <str> - Filepath to the video to load
     Output
     video <np.ndarray> - [F, W, H, C] uint8
     fourcc <int> - encoded codec type (!!!MAGICK, HARD TO FIND its specification) The website is owned by casino :)
@@ -42,12 +42,12 @@ def save_video_from_numpy(filepath: str, video: np.array, fourcc: int, fps: int,
     """ Saves video in numpy RGB24 to YUV420. Please specify output file as .avi
 
     Input
-    :param: filepath <str> - file to save video
-    :param: video <np.ndarray> - [F, W, H, C] uint8 RGB format
-    :param: fourcc <int> - encoded codec type (!!!HARD TO FIND its specification) The website is owned by casino now :)
-    :param: fps <float> - fps...
-    :param: size <(int, int)> - Width, Height
-    :param: color <bool> - True if colored video should be saved
+    :param filepath <str> - file to save video
+    :param video <np.ndarray> - [F, W, H, C] uint8 RGB format
+    :param fourcc <int> - encoded codec type (!!!HARD TO FIND its specification) The website is owned by casino now :)
+    :param fps <float> - fps...
+    :param size <(int, int)> - Width, Height
+    :param color <bool> - True if colored video should be saved
     """
 
     video_writer = cv2.VideoWriter(filepath, fourcc, fps, size, color)
@@ -57,16 +57,3 @@ def save_video_from_numpy(filepath: str, video: np.array, fourcc: int, fps: int,
 
     video_writer.release()
 
-
-def save_compressed_video(filepath: str, compressed_video: list) -> NoReturn:
-    """Saves raw compressed video using the pickle package"""
-    with open(filepath, 'wb') as file:
-        pickle.dump(compressed_video, file)
-
-
-def load_compressed_video(filepath: str):
-    """Loads raw compressed video using the pickle package"""
-    with open(filepath, 'rb') as file:
-        compressed_video = pickle.load(file)
-
-    return compressed_video

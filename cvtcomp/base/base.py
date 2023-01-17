@@ -1,17 +1,20 @@
 import pickle
+from typing import List, Tuple, Union, NoReturn
 
 import numpy as np
 from cvtcomp.base.decompositions import ttsvd_encode, tt_decode, tuckersvd_encode, tucker_decode
 
 
 class Encoder:
-    """Encoder, which adopts tensor decomposition approaches"""
+    """Encoder, which adopts tensor decomposition approaches including the stHOSVD and TTSVD"""
 
     def __init__(self, **kwargs):
         """
-        :param: quality PSNR < 45 db
-        :param: encoder_type - type of the used tensor decomposition: 'tucker' or 'tt'""
+        :param quality PSNR < 45 db
+        :param encoder_type - type of the used tensor decomposition: 'tucker' or 'tt'.
+        'tucker' = stHOSVD, 'tt' = TTSVD
         """
+
         self.quality = 25.0
         self.encoder_type = "tucker"
         self.encoder = tuckersvd_encode
@@ -31,7 +34,10 @@ class Encoder:
             else:
                 raise ValueError(f"Wrong argument is provided : {value}")
 
-    def encode(self, data: np.ndarray):
+    def encode(self, data: np.ndarray[np.uint8]) -> Union[Tuple[np.ndarray, List[np.ndarray]], List[np.ndarray]]:
+        """Encode the raw video
+        :param data - raw video in RGB24 format (np.uint8)"""
+
         return self.encoder(data, quality=self.quality)
 
 
@@ -40,7 +46,8 @@ class Decoder:
 
     def __init__(self, **kwargs):
         """
-        :param: decoder_type - type of the used tensor decomposition: 'tucker' or 'tt'""
+        :param decoder_type - type of the used tensor decomposition: 'tucker' or 'tt'
+        'tucker' = stHOSVD, 'tt' = TTSVD
         """
         self.decoder_type = "tucker"
         self.decoder = tucker_decode
@@ -54,12 +61,13 @@ class Decoder:
                     self.decoder = tt_decode
                 else:
                     raise ValueError(f"Wrong decoder type: {self.decoder_type}")
-            elif key == "quality":
-                self.quality = value
             else:
                 raise ValueError(f"Wrong argument is provided : {value}")
 
-    def decode(self, compressed_data: list):
+    def decode(self, compressed_data: Union[Tuple[np.ndarray, List[np.ndarray]], List[np.ndarray]]) -> np.ndarray[np.uint8]:
+        """Decode the video to RGB24 format
+        :param compressed_data:
+        """
 
         decompressed_data = np.clip(self.decoder(compressed_data), 0.0, 255.0).astype(np.uint8)
 
@@ -67,7 +75,19 @@ class Decoder:
 
 
 class TensorVideo:
+    """Class, which provides basic functionality:
+     1) Video encoding/decoding using the stHOSVD or TTSVD algorithms
+     2) Save/load video in the encoded(compressed) format using the pickle package.
+    """
+
     def __init__(self, compression_type='tt', quality=25.0, chunk_size=None, decoded_data_type=np.uint8):
+        """
+        :param compression_type - type of the used tensor decomposition ('tucker' or 'tt')
+        'tucker' = stHOSVD, 'tt' = TTSVD
+        :param quality - PSNR, dB. Should be less than  45 dB
+        :param chunk_size - number of frames in the chunks video is divided by
+        :param decoded_data_type - np.uint for RGB24
+        """
 
         self.compression_type = compression_type
         self.quality = quality
@@ -81,7 +101,9 @@ class TensorVideo:
         self.encoded_data_size = None
         self.fps = None
 
-    def encode(self, data: np.ndarray, show_results=False):
+    def encode(self, data: np.ndarray[np.uint8]) -> NoReturn:
+        """Encode the raw video
+        :param data - raw video in RGB24 format (np.uint8)"""
 
         self.encoded_data_size = 0
         res = []
@@ -91,7 +113,9 @@ class TensorVideo:
         self.shape = data.shape
         for frame_no in range(0, data.shape[0], self.chunk_size):
 
-            compressed_data_chunk = self.encoder.encode(data[frame_no:frame_no + self.chunk_size, :, :, :].astype(np.float32))
+            compressed_data_chunk = self.encoder.encode(
+                data[frame_no:frame_no + self.chunk_size, :, :, :].astype(np.float32)
+            )
 
             if self.compression_type == 'tt':
                 self.encoded_data_size += sum([x.nbytes for x in compressed_data_chunk])
@@ -103,10 +127,10 @@ class TensorVideo:
 
         self.encoded_data = res
 
-        if show_results:
-            return self.encoded_data
+    def decode(self) -> np.ndarray:
+        """Decode the video to RGB24 format
+        """
 
-    def decode(self):
         res = []
         for coded_chunk in self.encoded_data:
             x = self.decoder.decode(coded_chunk)
@@ -117,37 +141,44 @@ class TensorVideo:
         res[res > 255.0] = 255.0
         res[res < 0.0] = 0.0
         res = res.astype(self.decoded_data_type)
+
         return res
 
-    def save(self, filename, fps=30):
-        self.fps=fps
+    def save(self, filename: str, fps: int = 30) -> NoReturn:
+        """
+        Saves the encoded video
+        :param filename - filepath to save encoded video
+        :param fps - frames per second
+        """
+        self.fps = fps
         with open(filename, 'wb') as file:
             pickle.dump(self.__dict__, file)
 
-    def load(self, filename):
+    def load(self, filename: str):
         with open(filename, 'rb') as file:
             self.__dict__ = pickle.load(file)
         return self
 
 
-    # NOT IMPLEMENTED YET
-    class StreamerEncoded:
-        """Class for streaming the compressed data in to frame-wise manner"""
+class StreamerEncoded:
+    """Class for streaming the compressed data in to frame-wise manner"""
 
-        def __init__(self, compressed_data, video_len, encoder_type="tucker"):
-            self.compressed_data = compressed_data
-            self.encoder_type = encoder_type
-            self.n_frame = 0
-            self.video_len = video_len
+    def __init__(self, compressed_data, video_len, encoder_type="tucker"):
 
-        def __next__(self):
-            while self.n_frame < self.video_len:
-                if self.encoder_type == 'tucker':
-                    raise NotImplementedError("TBD")
-                elif self.encoder_type == 'tt':
-                    raise NotImplementedError("TBD")
-                self.n_frame += 1
-                yield None
+        self.compressed_data = compressed_data
+        self.encoder_type = encoder_type
+        self.n_frame = 0
+        self.video_len = video_len
+        raise NotImplementedError("TBD")
 
-        def __iter__(self):
-            return self
+    def __next__(self):
+        while self.n_frame < self.video_len:
+            if self.encoder_type == 'tucker':
+                raise NotImplementedError("TBD")
+            elif self.encoder_type == 'tt':
+                raise NotImplementedError("TBD")
+            self.n_frame += 1
+            yield None
+
+    def __iter__(self):
+        return self

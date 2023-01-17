@@ -136,7 +136,7 @@ def truncated_svd(matrix: np.ndarray[np.float32], quality: float) -> Tuple[np.nd
      """
 
     u, s, vh = np.linalg.svd(matrix, full_matrices=False)
-    res_r_frob = 0.0 # squared Frobenius norm of residuals
+    res_r_frob = 0.0  # squared Frobenius norm of residuals
     r = 1  # Minimal rank for decomposition
     for ii in range(s.size - 1, -1, -1):
         res_r_frob += s[ii] ** 2
@@ -168,7 +168,7 @@ def fold(unfolded_tensor: np.ndarray[np.float32], mode: int, shape: Tuple[int]) 
     return np.moveaxis(np.reshape(unfolded_tensor, full_shape), 0, mode)
 
 
-def ttsvd_encode(tensor: np.ndarray[np.uint8], quality: float = 25.0, video_range:float = 255) -> Tuple[np.ndarray[np.float32]]:
+def ttsvd_encode(tensor: np.ndarray[np.uint8], quality: float = 25.0, video_range: float = 255) -> Tuple[np.ndarray[np.float32]]:
     """Tensor-Train decomposition with analytical rank computation based on PSNR and its connection with Frobenius norm.
     https://github.com/azamat11235/NLRTA - The basic algorithm implementation is adopted from this source.
 
@@ -214,7 +214,7 @@ def ttsvd_encode(tensor: np.ndarray[np.uint8], quality: float = 25.0, video_rang
     return G_list
 
 
-def tuckersvd_encode(tensor: np.ndarray[np.uint8], quality: float = 25.0, video_range:float = 255, heuristics: bool = True) -> Tuple[np.ndarray[np.float32], List[np.ndarray[np.float32]]]:
+def tuckersvd_encode(tensor: np.ndarray[np.uint8], quality: float = 25.0, video_range: float = 255, heuristics: bool = True) -> Tuple[np.ndarray[np.float32], List[np.ndarray[np.float32]]]:
     """Tucker decomposition with analytical rank computation based on PSNR and its connection with Frobenius norm.
         https://github.com/azamat11235/NLRTA - The basic algorithm implementation is adopted from this source.
 
@@ -234,6 +234,7 @@ def tuckersvd_encode(tensor: np.ndarray[np.uint8], quality: float = 25.0, video_
 
     S = tensor.astype(np.float32)
 
+    # Maximum allowed Frobenius norm for residuals based on target PSNR
     if heuristics:
         # Whe do not compress along the small dims (e.g. C)
         r_min_to_compress = 4
@@ -251,9 +252,6 @@ def tuckersvd_encode(tensor: np.ndarray[np.uint8], quality: float = 25.0, video_
              / len(tensor.shape))
         )
 
-    # Test
-    # Maximum allowed Frobenius norm for residuals based on target PSNR
-    #single_svd_decomp_quality = np.sqrt(tensor.size * video_range ** 2 / np.power(10, quality / 10)) / (len(tensor.shape) - 1)
     U_list = []
     for k in range(len(tensor.shape)):
         ak = unfold(S, k)
@@ -276,7 +274,7 @@ def tuckersvd_encode(tensor: np.ndarray[np.uint8], quality: float = 25.0, video_
 
 if __name__ == "__main__":
     psnr = 45
-    tst = 100 * np.ones((40,32, 10, 3))
+    tst = 100 * np.ones((40, 32, 10, 3))
     tst[:, :, 0, 0] += 100 * np.ones((40, 32))
     print([x.shape for x in tuckersvd_encode(tst, psnr)[1]])
     print(np.linalg.norm(tst - tucker_decode(tuckersvd_encode(tst, psnr))))
