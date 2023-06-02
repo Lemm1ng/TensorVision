@@ -13,11 +13,13 @@ class Encoder:
         :param quality PSNR < 45 db
         :param encoder_type - type of the used tensor decomposition: 'tucker' or 'tt'.
         'tucker' = stHOSVD, 'tt' = TTSVD
+        :param verbose - provide additional data if needed
         """
 
         self.quality = 25.0
         self.encoder_type = "tucker"
         self.encoder = tuckersvd_encode
+        self.verbose = False
 
         for key, value in kwargs.items():
             if key == "encoder_type":
@@ -29,8 +31,10 @@ class Encoder:
                 else:
                     raise ValueError(f"Wrong encoder type: {self.encoder_type}")
             elif key == "quality":
-                assert 0 <= value <= 45.0, "0.0 <= PSNR <= 45.0"
+                assert 0 <= value <= 60.0, "0.0 <= PSNR <= 60.0"
                 self.quality = value
+            elif key == "verbose":
+                self.verbose = value
             else:
                 raise ValueError(f"Wrong argument is provided : {value}")
 
@@ -38,7 +42,7 @@ class Encoder:
         """Encode the raw video
         :param data - raw video in RGB24 format (np.uint8)"""
 
-        return self.encoder(data, quality=self.quality)
+        return self.encoder(data, quality=self.quality, verbose=self.verbose)
 
 
 class Decoder:
@@ -80,18 +84,20 @@ class TensorVideo:
      2) Save/load video in the encoded(compressed) format using the pickle package.
     """
 
-    def __init__(self, compression_type='tt', quality=25.0, chunk_size=None, decoded_data_type=np.uint8):
+    def __init__(self, compression_type='tt', quality=25.0, chunk_size=None, decoded_data_type=np.uint8, verbose=False):
         """
         :param compression_type - type of the used tensor decomposition ('tucker' or 'tt')
         'tucker' = stHOSVD, 'tt' = TTSVD
         :param quality - PSNR, dB. Should be less than  45 dB
         :param chunk_size - number of frames in the chunks video is divided by
         :param decoded_data_type - np.uint for RGB24
+        :param verbose - provide additional data if needed
         """
 
         self.compression_type = compression_type
         self.quality = quality
-        self.encoder = Encoder(encoder_type=self.compression_type, quality=self.quality)
+        self.verbose = verbose
+        self.encoder = Encoder(encoder_type=self.compression_type, quality=self.quality, verbose=self.verbose)
         self.decoder = Decoder(decoder_type=self.compression_type)
         self.chunk_size = chunk_size
         self.decoded_data_type = decoded_data_type
@@ -100,6 +106,8 @@ class TensorVideo:
         self.shape = None
         self.encoded_data_size = None
         self.fps = None
+
+        self.metadata = []
 
     def encode(self, data: np.ndarray[np.uint8]) -> NoReturn:
         """Encode the raw video
@@ -112,10 +120,15 @@ class TensorVideo:
             self.chunk_size = data.shape[0]
         self.shape = data.shape
         for frame_no in range(0, data.shape[0], self.chunk_size):
-
-            compressed_data_chunk = self.encoder.encode(
-                data[frame_no:frame_no + self.chunk_size, :, :, :].astype(np.float32)
-            )
+            if self.verbose:
+                compressed_data_chunk, metadata = self.encoder.encode(
+                    data[frame_no:frame_no + self.chunk_size, ...].astype(np.float32)
+                )
+                self.metadata.append(metadata)
+            else:
+                compressed_data_chunk = self.encoder.encode(
+                    data[frame_no:frame_no + self.chunk_size, ...].astype(np.float32)
+                )
 
             if self.compression_type == 'tt':
                 self.encoded_data_size += sum([x.nbytes for x in compressed_data_chunk])

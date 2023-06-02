@@ -120,7 +120,7 @@ def unfold(tensor: np.ndarray[np.float32], mode: int) -> np.ndarray[np.float32]:
     return np.reshape(np.moveaxis(tensor, mode, 0), (tensor.shape[mode], -1))
 
 
-def truncated_svd(matrix: np.ndarray[np.float32], quality: float) -> Tuple[np.ndarray[np.float32], np.ndarray[np.float32]]:
+def truncated_svd(matrix: np.ndarray[np.float32], quality: float, verbose=False) -> Tuple[np.ndarray[np.float32], np.ndarray[np.float32]]:
     """Performs truncated svd decomposition with analytical rank selection.
      It is based on desired quality of compression. Frobenius norm is used.
 
@@ -143,8 +143,10 @@ def truncated_svd(matrix: np.ndarray[np.float32], quality: float) -> Tuple[np.nd
         if np.sqrt(res_r_frob) >= quality:
             r = ii + 1
             break
-
-    return u[:, :r], (s[:r] * vh[:r, :].T).T
+    if verbose:
+        return u[:, :r], (s[:r] * vh[:r, :].T).T, s
+    else:
+        return u[:, :r], (s[:r] * vh[:r, :].T).T
 
 
 def fold(unfolded_tensor: np.ndarray[np.float32], mode: int, shape: Tuple[int]) -> np.ndarray[np.float32]:
@@ -168,7 +170,7 @@ def fold(unfolded_tensor: np.ndarray[np.float32], mode: int, shape: Tuple[int]) 
     return np.moveaxis(np.reshape(unfolded_tensor, full_shape), 0, mode)
 
 
-def ttsvd_encode(tensor: np.ndarray[np.uint8], quality: float = 25.0, video_range: float = 255) -> Tuple[np.ndarray[np.float32]]:
+def ttsvd_encode(tensor: np.ndarray[np.uint8], quality: float = 25.0, video_range: float = 255, heuristics: bool = True, verbose:bool = False) -> Tuple[np.ndarray[np.float32]]:
     """Tensor-Train decomposition with analytical rank computation based on PSNR and its connection with Frobenius norm.
     https://github.com/azamat11235/NLRTA - The basic algorithm implementation is adopted from this source.
 
@@ -180,27 +182,73 @@ def ttsvd_encode(tensor: np.ndarray[np.uint8], quality: float = 25.0, video_rang
 
     :param video_range <int> - max signal value in tensor
 
+    :param verbose <bool> - return singular values for the trSVD
+
     Output:
 
     compressed_data  <Tuple[np.ndarray[np.float32]]> - compressed data in Tensor-Train format
     """
 
-    assert quality <= 45.0, "Please, use quality <= 45.0 db"
+    assert quality <= 60.0, "Please, use quality <= 60.0 db"
+
+    if verbose:
+        sigma_all = []
 
     tensor = tensor.astype(np.float32)
     # Maximum allowed Frobenius norm for residuals based on target PSNR
-    single_svd_decomp_quality = np.sqrt(tensor.size * video_range**2 / np.power(10, quality / 10)) / (len(tensor.shape) - 1)
+    if heuristics:
+        # Whe do not compress along the small dims (e.g. C)
+        r_min_to_compress = 4
+
+        single_svd_decomp_quality = np.sqrt(
+            (tensor.size * video_range ** 2 / np.power(10, quality / 10))
+            / (sum([x >= r_min_to_compress for x in tensor.shape]) - 1)
+        )
+    else:
+        single_svd_decomp_quality = np.sqrt(
+                (tensor.size * video_range**2 / np.power(10, quality / 10))
+                / (len(tensor.shape) - 1))
 
     n = np.array(tensor.shape)
     G_list = []
     G = tensor.copy()
     G0 = unfold(G, 0)
-    u, vh = truncated_svd(G0, single_svd_decomp_quality)
+
+    if verbose:
+        if heuristics:
+            if min(G0.shape) < r_min_to_compress:
+                u, vh, sigma = truncated_svd(G0, 0, verbose=verbose)
+            else:
+                u, vh, sigma = truncated_svd(G0, single_svd_decomp_quality, verbose=verbose)
+        else:
+            u, vh, sigma = truncated_svd(G0, single_svd_decomp_quality, verbose=verbose)
+        sigma_all.append(sigma)
+    else:
+        if heuristics:
+            if min(G0.shape) < r_min_to_compress:
+                u, vh = truncated_svd(G0, 0, verbose=verbose)
+            else:
+                u, vh = truncated_svd(G0, single_svd_decomp_quality, verbose=verbose)
+        else:
+            u, vh = truncated_svd(G0, single_svd_decomp_quality, verbose=verbose)
+
     r_prev = u.shape[1]
     G_list.append(u)
     for k in range(1, len(tensor.shape) - 1):
         vh = vh.reshape(r_prev * n[k], np.prod(n[k + 1:]))
-        u, vh = truncated_svd(vh, single_svd_decomp_quality)
+        if verbose:
+            if heuristics:
+                if min(vh.shape) < r_min_to_compress:
+                    u, vh, sigma = truncated_svd(vh, 0, verbose=verbose)
+                else:
+                    u, vh, sigma = truncated_svd(vh, single_svd_decomp_quality, verbose=verbose)
+            sigma_all.append(sigma)
+        else:
+            if heuristics:
+                if min(vh.shape) < r_min_to_compress:
+                    u, vh = truncated_svd(vh, 0, verbose=verbose)
+                else:
+                    u, vh = truncated_svd(vh, single_svd_decomp_quality, verbose=verbose)
         r = u.shape[1]
         r_cur = min(r, vh.shape[0])
         u = u.reshape(r_prev, n[k], r_cur)
@@ -210,11 +258,13 @@ def ttsvd_encode(tensor: np.ndarray[np.uint8], quality: float = 25.0, video_rang
     G_list.append(vh)
     G_list[0] = np.expand_dims(G_list[0], 0)
     G_list[-1] = np.expand_dims(G_list[-1], -1)
+    if verbose:
+        return G_list, sigma_all
+    else:
+        return G_list
 
-    return G_list
 
-
-def tuckersvd_encode(tensor: np.ndarray[np.uint8], quality: float = 25.0, video_range: float = 255, heuristics: bool = True) -> Tuple[np.ndarray[np.float32], List[np.ndarray[np.float32]]]:
+def tuckersvd_encode(tensor: np.ndarray[np.uint8], quality: float = 25.0, video_range: float = 255, heuristics: bool = True, verbose=False) -> Tuple[np.ndarray[np.float32], List[np.ndarray[np.float32]]]:
     """Tucker decomposition with analytical rank computation based on PSNR and its connection with Frobenius norm.
         https://github.com/azamat11235/NLRTA - The basic algorithm implementation is adopted from this source.
 
@@ -226,6 +276,7 @@ def tuckersvd_encode(tensor: np.ndarray[np.uint8], quality: float = 25.0, video_
         :param heuristics <bool> - if True enables the heuristics in analytical rank evaluation during the compression.
 
         :param video_range <int> - max signal value in tensor
+        :param verbose <bool> - return singular values for the trSVD
 
         Output:
 
@@ -234,22 +285,23 @@ def tuckersvd_encode(tensor: np.ndarray[np.uint8], quality: float = 25.0, video_
 
     S = tensor.astype(np.float32)
 
+    if verbose:
+        sigma_all = []
+
     # Maximum allowed Frobenius norm for residuals based on target PSNR
     if heuristics:
         # Whe do not compress along the small dims (e.g. C)
         r_min_to_compress = 4
 
         single_svd_decomp_quality = np.sqrt(
-            ((tensor.size * video_range ** 2)
-             / np.power(10, quality / 10)
-             / sum([x >= r_min_to_compress for x in tensor.shape]))
-            )
+            (tensor.size * video_range ** 2 / np.power(10, quality / 10))
+            / sum([x >= r_min_to_compress for x in tensor.shape])
+        )
     else:
         # No heuristics:
         single_svd_decomp_quality = np.sqrt(
-            ((tensor.size * video_range ** 2)
-             / np.power(10, quality / 10)
-             / len(tensor.shape))
+            (tensor.size * video_range ** 2 / np.power(10, quality / 10))
+            / len(tensor.shape)
         )
 
     U_list = []
@@ -258,18 +310,34 @@ def tuckersvd_encode(tensor: np.ndarray[np.uint8], quality: float = 25.0, video_
 
         if heuristics:
             if tensor.shape[k] < r_min_to_compress:
-                u, vh = truncated_svd(ak, quality=0)
+                if verbose:
+                    u, vh, sigma = truncated_svd(ak, quality=0, verbose=verbose)
+                    sigma_all.append(sigma)
+                else:
+                    u, vh = truncated_svd(ak, quality=0, verbose=verbose)
             else:
-                u, vh = truncated_svd(ak, quality=single_svd_decomp_quality)
+                if verbose:
+                    u, vh, sigma = truncated_svd(ak, quality=single_svd_decomp_quality, verbose=verbose)
+                    sigma_all.append(sigma)
+                else:
+                    u, vh = truncated_svd(ak, quality=single_svd_decomp_quality, verbose=verbose)
         else:
-            u, vh = truncated_svd(ak, quality=single_svd_decomp_quality)
+            if verbose:
+                u, vh, sigma = truncated_svd(ak, quality=single_svd_decomp_quality, verbose=verbose)
+                sigma_all.append(sigma)
+            else:
+                u, vh = truncated_svd(ak, quality=single_svd_decomp_quality, verbose=verbose)
 
         r = u.shape[1]
         shape = list(S.shape)
         shape[k] = min(vh.shape[1], r)
         S = fold(vh, k, shape)
         U_list.append(u)
-    return S, U_list
+
+    if verbose:
+        return (S, U_list), sigma_all
+    else:
+        return S, U_list
 
 
 if __name__ == "__main__":
